@@ -64,20 +64,20 @@ class WebpackProject(object):
         """API to NPM package."""
         return NPMPackage(self.path)
 
-    def install(self):
+    def install(self, *args):
         """Install project."""
-        return self.npmpkg.install()
+        return self.npmpkg.install(*args)
 
-    def run(self, script_name):
+    def run(self, script_name, *args):
         """Run an NPM script."""
         scripts = self.npmpkg.package_json.get('scripts').keys()
         if script_name not in scripts:
             raise RuntimeError('Invalid NPM script.')
-        return self.npmpkg.run_script(script_name)
+        return self.npmpkg.run_script(script_name, *args)
 
-    def build(self):
+    def build(self, *args):
         """Run build script."""
-        return self.run('build')
+        return self.run('build', *args)
 
     def buildall(self):
         """Build project from scratch."""
