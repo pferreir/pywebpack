@@ -26,10 +26,12 @@ from .storage import FileStorage
 class WebpackProject(object):
     """API for building an existing Webpack project."""
 
-    def __init__(self, path):
+    def __init__(self, path, config=None, config_path=None):
         """Initialize instance."""
         self._npmpkg = None
         self._path = path
+        self._config = config
+        self._config_path = config_path
 
     @property
     def project_path(self):
@@ -47,12 +49,39 @@ class WebpackProject(object):
         """Get API to NPM package."""
         return NPMPackage(self.path)
 
+    def _get_config(self):
+        """Get configuration dictionary."""
+        if self._config is None:
+            return None
+        config = self._config() if callable(self._config) else self._config
+        return config
+
+    config = property(_get_config)
+
+    @property
+    def config_path(self):
+        """Get configuration path."""
+        return (join(self.project_path, self._config_path) if self._config_path
+                else None)
+
     def install(self, *args):
         """Install project."""
         return self.npmpkg.install(*args)
 
+    def _create_config(self):
+        if self.config:
+            # Create config path directory if it does not exists.
+            if not exists(dirname(self.config_path)):
+                makedirs(dirname(self.config_path))
+            # Write config.json
+            with open(self.config_path, 'w') as fp:
+                json.dump(self.config, fp, indent=2, sort_keys=True)
+
     def run(self, script_name, *args):
         """Run an NPM script."""
+        if self.config_path:
+            self._create_config()
+
         scripts = self.npmpkg.package_json.get('scripts', {}).keys()
         if script_name not in scripts:
             raise RuntimeError('Invalid NPM script.')
@@ -81,22 +110,8 @@ class WebpackTemplateProject(WebpackProject):
         """Initialize templated folder."""
         self._project_template = project_template
         self._storage_cls = storage_cls or FileStorage
-        self._config = config
-        self._config_path = config_path or 'config.json'
-        super(WebpackTemplateProject, self).__init__(dest)
-
-    @property
-    def config(self):
-        """Get configuration dictionary."""
-        if self._config is None:
-            return None
-        config = self._config() if callable(self._config) else self._config
-        return config
-
-    @property
-    def config_path(self):
-        """Get configuration path."""
-        return join(self.project_path, self._config_path)
+        super(WebpackTemplateProject, self).__init__(dest, config=config,
+                                                     config_path=config_path)
 
     @property
     def storage_cls(self):
@@ -107,17 +122,6 @@ class WebpackTemplateProject(WebpackProject):
         """Create webpack project from a template."""
         self.storage_cls(self._project_template, self.project_path).run(
             force=force)
-
-        # Write config if not empty
-        config = self.config
-        config_path = self.config_path
-        if config:
-            # Create config path directory if it does not exists.
-            if not exists(dirname(config_path)):
-                makedirs(dirname(config_path))
-            # Write config.json
-            with open(config_path, 'w') as fp:
-                json.dump(config, fp, indent=2, sort_keys=True)
 
     def clean(self):
         """Clean created webpack project."""
@@ -130,20 +134,8 @@ class WebpackTemplateProject(WebpackProject):
         super(WebpackTemplateProject, self).buildall()
 
 
-class WebpackBundleProject(WebpackTemplateProject):
+class _BundleMixin(object):
     """Build webpack project from multiple bundles."""
-
-    def __init__(self, dest, project_template=None, bundles=None, config=None,
-                 config_path=None, storage_cls=None):
-        """Initialize templated folder."""
-        self._bundles_iter = bundles or []
-        super(WebpackBundleProject, self).__init__(
-            dest,
-            project_template=project_template,
-            config=config or {},
-            config_path=config_path,
-            storage_cls=storage_cls,
-        )
 
     @property
     @cached
@@ -163,7 +155,7 @@ class WebpackBundleProject(WebpackTemplateProject):
     @property
     def config(self):
         """Inject webpack entry points from bundles."""
-        config = super(WebpackBundleProject, self).config
+        config = self._get_config()
         config.update({'entry': self.entry})
         return config
 
@@ -186,6 +178,32 @@ class WebpackBundleProject(WebpackTemplateProject):
         """Merge bundle dependencies into ``package.json``."""
         return merge_deps(self.npmpkg.package_json, self.dependencies)
 
+
+class WebpackBundleProject(_BundleMixin, WebpackProject):
+    def __init__(self, dest, project_template=None, bundles=None, config=None,
+                 config_path=None, storage_cls=None):
+        """Initialize templated folder."""
+        self._bundles_iter = bundles or []
+        super(WebpackBundleProject, self).__init__(
+            dest,
+            config=config or {},
+            config_path=config_path
+        )
+
+
+class WebpackTemplateBundleProject(_BundleMixin, WebpackTemplateProject):
+    def __init__(self, dest, project_template=None, bundles=None, config=None,
+                 config_path=None, storage_cls=None):
+        """Initialize templated folder."""
+        self._bundles_iter = bundles or []
+        super(WebpackTemplateBundleProject, self).__init__(
+            dest,
+            project_template=project_template,
+            config=config or {},
+            config_path=config_path,
+            storage_cls=storage_cls,
+        )
+
     def collect(self, force=None):
         """Collect asset files from bundles."""
         for b in self.bundles:
@@ -194,7 +212,7 @@ class WebpackBundleProject(WebpackTemplateProject):
     def create(self, force={'package.json'}):
         """Create webpack project from a template."""
         # Force package.json to be overwritten always.
-        super(WebpackBundleProject, self).create(force=force)
+        super(WebpackTemplateBundleProject, self).create(force=force)
         # Collect all asset files from the bundles.
         self.collect(force=force)
         # Generate new package json (reads the package.json and merges in

@@ -18,7 +18,7 @@ from .manifests import Manifest, ManifestEntry, ManifestLoader, \
     ManifestError, InvalidManifestError, UnfinishedManifestError,  \
     UnsupportedExtensionError, UnsupportedManifestError
 from .project import WebpackProject, WebpackTemplateProject, \
-    WebpackBundleProject
+    WebpackBundleProject, WebpackTemplateBundleProject
 from .storage import FileStorage, LinkStorage
 from .version import __version__
 
@@ -41,5 +41,6 @@ __all__ = (
     'WebpackManifestFactory',
     'WebpackProject',
     'WebpackTemplateProject',
+    'WebpackTemplateBundleProject',
     'WebpackYamFactory',
 )
